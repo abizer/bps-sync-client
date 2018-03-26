@@ -1,2 +1,3 @@
 configparser==3.5.0
 inotify==0.2.9
+libtmux==0.8.0
