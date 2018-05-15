@@ -4,12 +4,20 @@ from datetime import datetime
 import configparser
 import inotify.adapters
 import os
+import sys
 import libtmux
 from textwrap import dedent
 import time
 
+
+
 ENV = os.environ.get('BPS_SYNC_ENV', 'dev')
-CONF_FILE = 'sync.conf'
+CONF_FILE = os.path.join(
+    os.path.dirname(
+        os.path.realpath(sys.argv[0])
+    ),
+    'sync.conf'
+)
 
 
 def _schedule_transfer():
