@@ -10,7 +10,6 @@ from textwrap import dedent
 import time
 
 
-
 ENV = os.environ.get('BPS_SYNC_ENV', 'dev')
 CONF_FILE = os.path.join(
     os.path.dirname(
@@ -18,7 +17,11 @@ CONF_FILE = os.path.join(
     ),
     'sync.conf'
 )
+DEBUG = True if ENV == 'dev' else False
 
+def __debug(text):
+    if DEBUG:
+        print(text)
 
 def _schedule_transfer():
     pass
@@ -41,6 +44,7 @@ def _build_transfer_script(filename, transfer_queue, transfer_log, remote_dir):
 
     with open(filename, 'w') as transfer_file:
         transfer_file.write(template)
+        os.chmod(filename, 0o700)
 
 
 def main(watch_dir, tmux_socket, tmux_session, remote_dir, transfer_queue, transfer_log, transfer_script):
@@ -70,7 +74,7 @@ def main(watch_dir, tmux_socket, tmux_session, remote_dir, transfer_queue, trans
             tmux_session, tmux_socket))
         return 1
 
-    transfer_script = 'transfer.sh' if ENV is "prod" else "dev_transfer.sh"
+    transfer_script = os.path.abspath(transfer_script)
 
     for event in _i.event_gen():
         if event is not None:
@@ -83,9 +87,11 @@ def main(watch_dir, tmux_socket, tmux_session, remote_dir, transfer_queue, trans
                 print("{}: received {} for transfer to {}".format(
                     datetime.now(), fqfn, remote_dir))
                 try:
-                    # execute the transfer script in a tmux session
+                    # execute the transfer script in a tmux window 
                     window = transfer_session.new_window(
-                        window_shell='bash {} {}'.format(transfer_script, fqfn))
+                        window_shell='{} "{}"'.format(transfer_script, fqfn)
+                    )
+                    __debug("\twindow: {} {} {}".format(window.id, transfer_script, fqfn))
 
                 except Exception as e:
                     print(e)
