@@ -1,0 +1,36 @@
+bps-sync-client
+
+python replacement for a shell script that automatically
+rsync'ed files moved into a directory, and opened said
+rsync transfer in a tmux session so one could watch the
+transfer take place, if so desired.
+
+to inspect the transfer, simply open the relevant tmux
+session on the socket specified in sync.conf, e.g.
+`tmux -S transfer_socket attach -t transfers`
+
+a list of transfers that have been registered (and
+completed) can be found in the file `.transfer_log`
+in the same directory as the `watch_sync.py` script.
+
+a list of transfers in progress can be found in the
+`.transfer_queue` file. as transfers complete, they are
+removed from this file. 
+
+currently no scheduling of transfers takes place, nor
+is there any error recovery. these features are planned.
+if the script dies or errors (e.g. the ssh tunnel used
+by rsync dies), one has to manually restart all the
+transfers by moving the files out and back into the
+watch directory. rsync should take care of restarting
+intelligently from where it left off.
+
+it is recommended to wrap this script with `autossh` to
+keep the tunnel alive, and use `.ssh/config` to configure
+the connections expected by this script. assuming the machine
+where this script is running is the client, and the transfer
+destination is the server, one can configure a `.ssh/config`
+entry so `autossh` will open a reverse tunnel from the server
+to the client, and configure an `.ssh/config` entry on the
+client to use that tunnel to log into the server for the rsync
+transfer.
