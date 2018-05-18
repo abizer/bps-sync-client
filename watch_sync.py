@@ -19,9 +19,11 @@ CONF_FILE = os.path.join(
 )
 DEBUG = True if ENV == 'dev' else False
 
+
 def __debug(text):
     if DEBUG:
         print(text)
+
 
 def _schedule_transfer():
     pass
@@ -87,11 +89,12 @@ def main(watch_dir, tmux_socket, tmux_session, remote_dir, transfer_queue, trans
                 print("{}: received {} for transfer to {}".format(
                     datetime.now(), fqfn, remote_dir))
                 try:
-                    # execute the transfer script in a tmux window 
+                    # execute the transfer script in a tmux window
                     window = transfer_session.new_window(
                         window_shell='{} "{}"'.format(transfer_script, fqfn)
                     )
-                    __debug("\twindow: {} {} {}".format(window.id, transfer_script, fqfn))
+                    __debug("\twindow: {} {} {}".format(
+                        window.id, transfer_script, fqfn))
 
                 except Exception as e:
                     print(e)
