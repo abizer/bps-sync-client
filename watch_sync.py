@@ -29,7 +29,7 @@ def _schedule_transfer():
     pass
 
 
-def _build_transfer_script(filename, transfer_queue, transfer_log, remote_dir):
+def _build_transfer_script(filename, transfer_queue, transfer_log, remote_dir, msg_api_key, msg_gateway):
     template = dedent("""
     #!/bin/bash
     set -euxo pipefail
@@ -39,21 +39,32 @@ def _build_transfer_script(filename, transfer_queue, transfer_log, remote_dir):
 
     echo "$MD5 $xfer" >> {transfer_queue}
     echo "$(date) transfer of $xfer started" >> {transfer_log}
+    curl -X POST -F 'key={msg_api_key}' -F "msg=$uxfer download complete" {msg_gateway}
     rsync -rvP --append --info=progress "$xfer" {remote_dir}
     echo "$(date) transfer of $xfer complete" >> {transfer_log}
+    curl -X POST -F 'key={msg_api_key}' -F "msg=$uxfer download complete" {msg_gateway}
     sed -i "/$MD5/d" {transfer_queue}
-    """).format(transfer_queue=transfer_queue, transfer_log=transfer_log, remote_dir=remote_dir)
+    """).format(
+        transfer_queue=transfer_queue,
+        transfer_log=transfer_log,
+        remote_dir=remote_dir,
+        msg_api_key=msg_api_key,
+        msg_gateway=msg_gateway
+    )
 
     with open(filename, 'w') as transfer_file:
         transfer_file.write(template)
         os.chmod(filename, 0o700)
 
 
-def main(watch_dir, tmux_socket, tmux_session, remote_dir, transfer_queue, transfer_log, transfer_script):
+def main(watch_dir, tmux_socket, tmux_session, remote_dir,
+         transfer_queue, transfer_log, transfer_script, msg_api_key,
+         msg_gateway):
 
     # generate the script we use in tmux to handle the transfer itself
     _build_transfer_script(
-        transfer_script, transfer_queue, transfer_log, remote_dir)
+        transfer_script, transfer_queue, transfer_log,
+        remote_dir, msg_api_key, msg_gateway)
 
     _i = inotify.adapters.Inotify()
 
@@ -116,5 +127,7 @@ if __name__ == '__main__':
             transfer_queue=_conf('transfer_queue'),
             transfer_log=_conf('transfer_log'),
             transfer_script=_conf('transfer_script'),
+            msg_api_key=_conf('msg_api_key'),
+            msg_gateway=_conf('msg_gateway'),
         )
     )
