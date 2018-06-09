@@ -1,135 +1,96 @@
 #!./venv/bin/python
 
 from datetime import datetime
-import configparser
 import inotify.adapters
 import os
 import sys
 import libtmux
-from textwrap import dedent
 import time
 
+TRANSFER_SCRIPT = 'do_transfer.sh'
 
-ENV = os.environ.get('BPS_SYNC_ENV', 'dev')
 CONF_FILE = os.path.join(
     os.path.dirname(
         os.path.realpath(sys.argv[0])
     ),
     'sync.conf'
 )
-DEBUG = True if ENV == 'dev' else False
-
-
-def __debug(text):
-    if DEBUG:
-        print(text)
 
 
 def _schedule_transfer():
     pass
 
 
-def _build_transfer_script(filename, transfer_queue, transfer_log, remote_dir, msg_api_key, msg_gateway):
-    template = dedent("""
-    #!/bin/bash
-    set -euxo pipefail
+def _acquire_tmux(socket, session):
+    """Connect to or create a tmux socket and return a session."""
 
-    xfer="$1"
-    uxfer="${xfer##*/}"
-    MD5=$(echo "$xfer" | md5sum | cut -d' ' -f1)
-    """ +
-    """
-    echo "$MD5 $xfer" >> {transfer_queue}
-    echo "$(date) transfer of $xfer started" >> {transfer_log}
-    curl -X POST -F 'key={msg_api_key}' -F "msg=$uxfer download complete" {msg_gateway}
-    rsync -rvP --append --info=progress "$xfer" {remote_dir}
-    echo "$(date) transfer of $xfer complete" >> {transfer_log}
-    curl -X POST -F 'key={msg_api_key}' -F "msg=$uxfer download complete" {msg_gateway}
-    sed -i "/$MD5/d" {transfer_queue}
-    """.format(
-        transfer_queue=transfer_queue,
-        transfer_log=transfer_log,
-        remote_dir=remote_dir,
-        msg_api_key=msg_api_key,
-        msg_gateway=msg_gateway
-    ))
+    tmux = libtmux.Server(socket_path=socket)
+    if tmux.has_session({'session_name': session}):
+        transfer_session = tmux.find_where({"session_name": session})
+    else:
+        transfer_session = tmux.new_session(session_name=session)
 
-    with open(filename, 'w') as transfer_file:
-        transfer_file.write(template)
-        os.chmod(filename, 0o700)
+    return transfer_session
 
 
-def main(watch_dir, tmux_socket, tmux_session, remote_dir,
-         transfer_queue, transfer_log, transfer_script, msg_api_key,
-         msg_gateway):
-
-    # generate the script we use in tmux to handle the transfer itself
-    _build_transfer_script(
-        transfer_script, transfer_queue, transfer_log,
-        remote_dir, msg_api_key, msg_gateway)
+def _watch_dir(watch):
+    """Establish a watch for moves into the desired directory."""
 
     _i = inotify.adapters.Inotify()
+    _i.add_watch(watch)
 
-    _i.add_watch(watch_dir)
+    def do_watch():
+        for event in _i.event_gen():
+            if event is not None:
+                (_, type_names, path, filename) = event
+                if "IN_MOVED_TO" in type_names:
+                    yield path, filename
 
-    print("Run Environment: {}".format(ENV))
-    print("tmux Socket: {}, Session: {}".format(tmux_socket, tmux_session))
-    print("Established watches on {}...".format(watch_dir))
+    return do_watch
 
-    tmux = libtmux.Server(socket_path=tmux_socket)
 
-    if not tmux:
-        print("Could not connect to tmux server on socket {}".format(tmux_socket))
-        return 1
+def main(transfer_script, transfer_session, watched_dir):
+    """Trigger an rsync in a tmux window for files moved into the watch."""
 
-    transfer_session = tmux.find_where({"session_name": tmux_session})
+    for path, filename in watched_dir():
+        fqfn = os.path.join(path, filename)
 
-    if not transfer_session:
-        print("Could not find tmux session {} on socket {}".format(
-            tmux_session, tmux_socket))
-        return 1
+        print("{}: received {} for transfer".format(
+            datetime.now().strftime("%x %X"), fqfn))
 
-    transfer_script = os.path.abspath(transfer_script)
+        try:
+            window = transfer_session.new_window(
+                window_shell='{} "{}"'.format(transfer_script, fqfn)
+            )
 
-    for event in _i.event_gen():
-        if event is not None:
-            (_, type_names, path, filename) = event
-
-            fqfn = os.path.join(path, filename)
-
-            # only interested in moves into the folder
-            if "IN_MOVED_TO" in type_names:
-                print("{}: received {} for transfer to {}".format(
-                    datetime.now(), fqfn, remote_dir))
-                try:
-                    # execute the transfer script in a tmux window
-                    window = transfer_session.new_window(
-                        window_shell='{} "{}"'.format(transfer_script, fqfn)
-                    )
-                    __debug("\twindow: {} {} {}".format(
-                        window.id, transfer_script, fqfn))
-
-                except Exception as e:
-                    print(e)
+        except Exception as e:
+            print(e)
 
 
 if __name__ == '__main__':
 
-    conf = configparser.ConfigParser()
-    conf.read(CONF_FILE)
+    # hacky config that can also be sourced by a bash script
+    config = {}
+    with open(CONF_FILE, 'r') as conf:
+        for line in conf.readlines():
+            k, v = line.strip().split('=')
+            config[k] = v
 
-    def _conf(key): return conf.get(ENV, key)
+    transfer_script = os.path.abspath(TRANSFER_SCRIPT)
+    transfer_session = _acquire_tmux(
+        config['tmux_socket'],
+        config['tmux_session']
+    )
+    watch_fn = _watch_dir(config['watch_dir'])
+
+    print("Established watches on '{}'".format(
+        os.path.abspath(config['watch_dir'])))
+    print("Remote transfer directory is {}".format(config['remote_dir']))
 
     exit(
         main(
-            watch_dir=_conf('watch_dir'),
-            tmux_socket=_conf('tmux_socket'),
-            tmux_session=_conf('tmux_session'),
-            remote_dir=_conf('remote_dir'),
-            transfer_queue=_conf('transfer_queue'),
-            transfer_log=_conf('transfer_log'),
-            transfer_script=_conf('transfer_script'),
-            msg_api_key=_conf('msg_api_key'),
-            msg_gateway=_conf('msg_gateway'),
+            transfer_script=transfer_script,
+            transfer_session=transfer_session,
+            watched_dir=watch_fn
         )
     )
