@@ -35,9 +35,10 @@ def _build_transfer_script(filename, transfer_queue, transfer_log, remote_dir, m
     set -euxo pipefail
 
     xfer="$1"
-    uxfer=${xfer##*/}"
+    uxfer="${xfer##*/}"
     MD5=$(echo "$xfer" | md5sum | cut -d' ' -f1)
-
+    """ +
+    """
     echo "$MD5 $xfer" >> {transfer_queue}
     echo "$(date) transfer of $xfer started" >> {transfer_log}
     curl -X POST -F 'key={msg_api_key}' -F "msg=$uxfer download complete" {msg_gateway}
@@ -45,13 +46,13 @@ def _build_transfer_script(filename, transfer_queue, transfer_log, remote_dir, m
     echo "$(date) transfer of $xfer complete" >> {transfer_log}
     curl -X POST -F 'key={msg_api_key}' -F "msg=$uxfer download complete" {msg_gateway}
     sed -i "/$MD5/d" {transfer_queue}
-    """).format(
+    """.format(
         transfer_queue=transfer_queue,
         transfer_log=transfer_log,
         remote_dir=remote_dir,
         msg_api_key=msg_api_key,
         msg_gateway=msg_gateway
-    )
+    ))
 
     with open(filename, 'w') as transfer_file:
         transfer_file.write(template)
