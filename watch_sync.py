@@ -35,6 +35,7 @@ def _build_transfer_script(filename, transfer_queue, transfer_log, remote_dir, m
     set -euxo pipefail
 
     xfer="$1"
+    uxfer=${xfer##*/}"
     MD5=$(echo "$xfer" | md5sum | cut -d' ' -f1)
 
     echo "$MD5 $xfer" >> {transfer_queue}
