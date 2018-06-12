@@ -25,7 +25,7 @@ def _acquire_tmux(socket, session):
     """Connect to or create a tmux socket and return a session."""
 
     tmux = libtmux.Server(socket_path=socket)
-    if tmux.has_session({'session_name': session}):
+    if tmux.find_where({'session_name': session}):
         transfer_session = tmux.find_where({"session_name": session})
     else:
         transfer_session = tmux.new_session(session_name=session)
